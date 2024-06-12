@@ -107,7 +107,8 @@ LOADER_MAPPING = {
     ".eml": (MyElmLoader, {}),
     ".epub": (UnstructuredEPubLoader, {}),
     ".html": (UnstructuredHTMLLoader, {}),
-    ".md": (UnstructuredMarkdownLoader, { "mode": "elements" }),
+    # ".md": (UnstructuredMarkdownLoader, { "mode": "elements", "encoding": "utf8" }),
+    ".md": (TextLoader, {"encoding": "utf8"}),
     ".odt": (UnstructuredODTLoader, {}),
     ".pdf": (PyMuPDFLoader, {}),
     ".ppt": (UnstructuredPowerPointLoader, {}),
@@ -190,7 +191,6 @@ def main():
     print(f"Creating embeddings. May take some minutes...")
     db.add_documents(texts)
 
-    db.persist()
     db = None
 
     print(f"Ingestion complete! You can now run privateGPT.py to query your documents")
