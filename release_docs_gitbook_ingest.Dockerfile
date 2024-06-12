@@ -18,3 +18,4 @@ COPY chains.py .
 COPY images ./images
 
 ENTRYPOINT ["python", "release-docs-gitbook-ingest.py"]
+
