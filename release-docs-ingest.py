@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 import os
+
+import chromadb
+from chromadb.config import DEFAULT_TENANT, DEFAULT_DATABASE, Settings
+
+from dotenv import load_dotenv
+from utils import BaseLogger
+
 import glob
 from typing import List
 from multiprocessing import Pool
 from tqdm import tqdm
 
-from langchain.document_loaders import (
+from langchain_community.document_loaders import (
     CSVLoader,
     EverNoteLoader,
     PyMuPDFLoader,
@@ -21,17 +28,51 @@ from langchain.document_loaders import (
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
-from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.docstore.document import Document
-from constants import CHROMA_SETTINGS
+
+from chains import (
+    load_embedding_model,
+    load_llm,
+)
+
+
+load_dotenv(".env")
+
+chroma_collection = os.getenv("CHROMA_COLLECTION", "release-docs")
+chroma_host = os.getenv("CHROMA_HOST", "localhost")
+chroma_port = int(os.getenv("CHROMA_PORT", 8000))
+ollama_base_url = os.getenv("OLLAMA_BASE_URL")
+embedding_model_name = os.getenv("EMBEDDING_MODEL")
+llm_name = os.getenv("LLM")
+
+embeddings, dimension = load_embedding_model(
+    embedding_model_name,
+    config={"ollama_base_url": ollama_base_url},
+    logger=BaseLogger(),
+)
 
 
 # Load environment variables
-persist_directory = os.environ.get('PERSIST_DIRECTORY', 'db')
-source_directory = os.environ.get('SOURCE_DIRECTORY', 'source_documents')
-embeddings_model_name = os.environ.get('EMBEDDINGS_MODEL_NAME', 'all-MiniLM-L6-v2')
+source_directory = os.environ.get('SOURCE_DIRECTORY', 'documents')
 chunk_size = 500
 chunk_overlap = 50
+
+
+# Initialize Chroma client
+chroma_client = chromadb.HttpClient(
+    host=chroma_host,
+    port=chroma_port,
+    ssl=False,
+    headers=None,
+    settings=Settings(),
+    tenant=DEFAULT_TENANT,
+    database=DEFAULT_DATABASE,
+)
+
+# create vector database if it doesn't exist
+chroma_client.get_or_create_collection(chroma_collection, metadata={"key": "value"})
+
+
 
 # Custom document loaders
 class MyElmLoader(UnstructuredEmailLoader):
@@ -66,7 +107,7 @@ LOADER_MAPPING = {
     ".eml": (MyElmLoader, {}),
     ".epub": (UnstructuredEPubLoader, {}),
     ".html": (UnstructuredHTMLLoader, {}),
-    ".md": (UnstructuredMarkdownLoader, {}),
+    ".md": (UnstructuredMarkdownLoader, { "mode": "elements" }),
     ".odt": (UnstructuredODTLoader, {}),
     ".pdf": (PyMuPDFLoader, {}),
     ".ppt": (UnstructuredPowerPointLoader, {}),
@@ -129,37 +170,26 @@ def process_documents(ignored_files: List[str] = []) -> List[Document]:
     print(f"Split into {len(texts)} chunks of text (max. {chunk_size} tokens each)")
     return texts
 
-def does_vectorstore_exist(persist_directory: str) -> bool:
+def does_vectorstore_exist() -> bool:
     """
     Checks if vectorstore exists
     """
-    if os.path.exists(os.path.join(persist_directory, 'index')):
-        if os.path.exists(os.path.join(persist_directory, 'chroma-collections.parquet')) and os.path.exists(os.path.join(persist_directory, 'chroma-embeddings.parquet')):
-            list_index_files = glob.glob(os.path.join(persist_directory, 'index/*.bin'))
-            list_index_files += glob.glob(os.path.join(persist_directory, 'index/*.pkl'))
-            # At least 3 documents are needed in a working vectorstore
-            if len(list_index_files) > 3:
-                return True
-    return False
+    chroma_client.get_or_create_collection(chroma_collection, metadata={"key": "value"})
+    return True
 
 def main():
-    # Create embeddings
-    embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
 
-    if does_vectorstore_exist(persist_directory):
-        # Update and store locally vectorstore
-        print(f"Appending to existing vectorstore at {persist_directory}")
-        db = Chroma(persist_directory=persist_directory, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
-        collection = db.get()
-        texts = process_documents([metadata['source'] for metadata in collection['metadatas']])
-        print(f"Creating embeddings. May take some minutes...")
-        db.add_documents(texts)
-    else:
-        # Create and store locally vectorstore
-        print("Creating new vectorstore")
-        texts = process_documents()
-        print(f"Creating embeddings. May take some minutes...")
-        db = Chroma.from_documents(texts, embeddings, persist_directory=persist_directory)
+    does_vectorstore_exist()
+
+    # Update and store locally vectorstore
+    print(f"Appending to existing vectorstore")
+    db = Chroma(client=chroma_client, collection_name=chroma_collection, embedding_function=embeddings)
+    collection = db.get()
+
+    texts = process_documents([metadata['source'] for metadata in collection['metadatas']])
+    print(f"Creating embeddings. May take some minutes...")
+    db.add_documents(texts)
+
     db.persist()
     db = None
 
