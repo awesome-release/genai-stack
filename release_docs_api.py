@@ -69,18 +69,9 @@ llm_chain = configure_llm_only_chain(llm)
 
 # PROMPT TEMPLATE
 general_system_template = """
-Use the following pieces of context to answer the question at the end.
-The context contains snippets from docs.release.com the Release documentation.
-When you find particular documentation snippet useful, make sure to cite it in the answer using the link.
-If you don't know the answer, just say that you don't know, don't try to make up an answer.
 ----
 {summaries}
 ----
-Each answer you generate should contain a section at the end of links to
-You can only use links to docs.release.com that are present in the context and always
-add links to the end of the answer in the style of citations.
-Generate concise answers with references sources section of links to
-relevant docs.release.com documentation only at the end of the answer.
 """
 general_user_template = "Question:```{question}```"
 messages = [
