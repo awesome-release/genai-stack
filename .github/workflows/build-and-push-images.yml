@@ -9,7 +9,7 @@ concurrency:
 
 on:
   push:
-    branches: [release-docker-build]
+    branches: [release-docs]
     paths-ignore:
       - '**.md'
       - 'images/**/*'
@@ -77,93 +77,16 @@ jobs:
             type=ref,event=tag
             type=ref,event=pr
 
-      - name: "Build and push multi-platform Docker image: genai-stack/pull-model"
+      - name: "Build and push multi-platform Docker image: genai-stack/release-api"
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./pull_model.Dockerfile
+          file: ./release_docs_api.Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           # tags: ${{ steps.meta.outputs.tags }}
-          tags: releaseai/genai-stack-pull-model:latest
+          tags: releaseai/genai-stack-release-api:latest
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: "Build and push multi-platform Docker image: genai-stack/loader"
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./loader.Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          # tags: ${{ steps.meta.outputs.tags }}
-          tags: releaseai/genai-stack-loader:latest
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: "Build and push multi-platform Docker image: genai-stack/custom-loader"
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./custom_loader.Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          # tags: ${{ steps.meta.outputs.tags }}
-          tags: releaseai/genai-stack-custom-loader:latest
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: "Build and push multi-platform Docker image: genai-stack/bot"
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./bot.Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          # tags: ${{ steps.meta.outputs.tags }}
-          tags: releaseai/genai-stack-bot:latest
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: "Build and push multi-platform Docker image: genai-stack/pdf-bot"
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./pdf_bot.Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          # tags: ${{ steps.meta.outputs.tags }}
-          tags: releaseai/genai-stack-pdf-bot:latest
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: "Build and push multi-platform Docker image: genai-stack/api"
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./api.Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          # tags: ${{ steps.meta.outputs.tags }}
-          tags: releaseai/genai-stack-api:latest
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: "Build and push multi-platform Docker image: genai-stack/front-end"
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./front-end.Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          # tags: ${{ steps.meta.outputs.tags }}
-          tags: releaseai/genai-stack-front-end:latest
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
