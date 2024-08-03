@@ -68,6 +68,7 @@ llm = load_llm(
 llm_chain = configure_llm_only_chain(llm)
 
 # PROMPT TEMPLATE
+print("the dog is really raw!")
 general_system_template = """
 ----
 {summaries}
