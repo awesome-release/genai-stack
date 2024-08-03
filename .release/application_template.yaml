@@ -1,15 +1,12 @@
 ---
-auto_deploy: true
-context: release-ry6clz
+execution_type: server
+context: release-ai
 domain: ai-playground.releaseapp.io
 repo_name: awesome-release/genai-stack
 hostnames:
-- api: api-${env_id}.${domain}
-- bot: bot-${env_id}.${domain}
-- front-end: front-end-${env_id}.${domain}
-- loader: loader-${env_id}.${domain}
-- pdf-bot: pdf-bot-${env_id}.${domain}
-- ollama: ollama-${env_id}.${domain}
+- api: api-release-docs-rag-${env_id}.${domain}
+- chroma: chroma-release-docs-rag-${env_id}.${domain}
+- front-end: front-end-release-docs-rag-${env_id}.${domain}
 environment_templates:
 - name: ephemeral
 - name: permanent
@@ -21,85 +18,39 @@ resources:
     limits: 1Gi
     requests: 100Mi
   replicas: 1
-ingress:
-  proxy_body_size: 30m
-  proxy_buffer_size: 64k
-  proxy_buffering: true
-  proxy_buffers_number: 4
-  proxy_max_temp_file_size: 1024m
-  proxy_read_timeout: '180'
-  proxy_send_timeout: '180'
 shared_volumes:
 - name: models
-  size: 40Gi
+  size: 60Gi
   type: persistent
 parameters:
 - name: llm
   type: string
   description: Can be any Ollama model tag, or gpt-4 or gpt-3.5 or claudev2
-  default: llama2
-- name: embedding_model
-  type: string
-  description: Can be sentence_transformer, openai, aws, ollama or google-genai-embedding-001
-  default: sentence_transformer
+  default: llama3:8b
+  optional: true
 services:
-- name: ollama
-  image: ollama/ollama
-  command:
-  - "/bin/ollama"
-  args:
-  - serve
-  envs:
-  - key: LLM
-    value: "${parameters.llm}"
-  - key: EMBEDDING_MODEL
-    value: "${parameters.embedding_model}"
-  memory:
-    limits: 64Gi
-    requests: 16Gi
-  cpu:
-    limits: 128
-    requests: 12
-  ports:
-  - type: node_port
-    target_port: '11434'
-    port: '11434'
-    loadbalancer: false
-  node_selector:
-  - key: nvidia.com/gpu
-    value: 'true'
-  - key: beta.kubernetes.io/instance-type
-    value: g5.12xlarge
-  volumes:
-  - name: shmem
-    type: shmem
-    size: 16Gi
-    mount_path: "/dev/shm"
-  - claim: models
-    mount_path: "/models"
 - name: api
   image: awesome-release/genai-stack/api
   build:
     context: "."
-    dockerfile: api.Dockerfile
+    dockerfile: release_docs_api.Dockerfile
   has_repo: true
   volumes: []
   command:
   - uvicorn
-  - api:app
+  - release_docs_api:app
   - "--host"
   - 0.0.0.0
   - "--port"
   - '8504'
-  envs:
-  - key: LLM
-    value: "${parameters.llm}"
-  - key: EMBEDDING_MODEL
-    value: "${parameters.embedding_model}"
+  depends_on:
+  - chroma
   readiness_probe:
-    http_get:
-      path: "/"
-      port: 8504
+    exec:
+      command:
+      - curl
+      - "-f"
+      - http://localhost:8504/
     period_seconds: 5
     timeout_seconds: 3
     failure_threshold: 5
@@ -109,152 +60,174 @@ services:
     target_port: '8504'
     port: '8504'
     loadbalancer: false
-- name: bot
-  image: awesome-release/genai-stack/bot
-  build:
-    context: "."
-    dockerfile: bot.Dockerfile
-  has_repo: true
-  volumes: []
-  command:
-  - streamlit
-  - run
-  - bot.py
-  - "--server.port=8501"
-  - "--server.address=0.0.0.0"
   envs:
+  - key: CHROMA_HOST
+    value: chroma
+  - key: CHROMA_PORT
+    value: 8000
   - key: LLM
     value: "${parameters.llm}"
   - key: EMBEDDING_MODEL
-    value: "${parameters.embedding_model}"
-  ports:
-  - type: node_port
-    target_port: '8501'
-    port: '8501'
-    loadbalancer: false
-- name: database
-  image: neo4j:5.11
+    value: sentence_transformer
+  - key: OLLAMA_BASE_URL
+    value: http://ollama:11434
+  - key: LANGCHAIN_API_KEY
+    value: "${LANGCHAIN_API_KEY}"
+  - key: LANGCHAIN_PROJECT
+    value: "${LANGCHAIN_PROJECT}"
+  - key: LANGCHAIN_ENDPOINT
+    value: https://api.smith.langchain.com
+  - key: LANGCHAIN_TRACING_V2
+    value: false
+- name: chroma
+  image: chromadb/chroma
   has_repo: false
-  volumes: []
+  args:
+  - "--workers"
+  - '1'
+  - "--host"
+  - 0.0.0.0
+  - "--port"
+  - '8000'
+  - "--proxy-headers"
+  - "--log-config"
+  - chromadb/log_config.yml
+  - "--timeout-keep-alive"
+  - '30'
   readiness_probe:
-    http_get:
-      path: "/"
-      port: 7474
-    period_seconds: 15
-    timeout_seconds: 30
-    failure_threshold: 10
+    exec:
+      command:
+      - curl
+      - "-f"
+      - http://localhost:8000/api/v1/heartbeat
+    period_seconds: 30
+    timeout_seconds: 10
+    failure_threshold: 3
     initial_delay_seconds: 0
   ports:
   - type: node_port
-    target_port: '7474'
-    port: '7474'
-    loadbalancer: false
-  - type: node_port
-    target_port: '7687'
-    port: '7687'
+    target_port: '8000'
+    port: '8000'
     loadbalancer: false
 - name: front-end
-  static: true
-  build_base: front-end
-  build_output_directory: dist/
-  build_package_install_command: npm install
-  build_command: npm run build
-- name: loader
-  image: awesome-release/genai-stack/loader
+  image: awesome-release/genai-stack/front-end
   build:
     context: "."
-    dockerfile: loader.Dockerfile
+    dockerfile: front-end.Dockerfile
   has_repo: true
-  volumes: []
   command:
-  - streamlit
+  - npm
   - run
-  - loader.py
-  - "--server.port=8502"
-  - "--server.address=0.0.0.0"
+  - dev
+  depends_on:
+  - api
   ports:
   - type: node_port
-    target_port: '8502'
-    port: '8502'
+    target_port: '8505'
+    port: '8505'
     loadbalancer: false
-  - type: node_port
-    target_port: '8080'
-    port: '8081'
-    loadbalancer: false
-- name: pdf-bot
-  image: awesome-release/genai-stack/pdf_bot
-  build:
-    context: "."
-    dockerfile: pdf_bot.Dockerfile
-  has_repo: true
-  command:
-  - streamlit
-  - run
-  - pdf_bot.py
-  - "--server.port=8503"
-  - "--server.address=0.0.0.0"
   envs:
-  - key: LLM
-    value: "${parameters.llm}"
-  - key: EMBEDDING_MODEL
-    value: "${parameters.embedding_model}"
+  - key: VITE_API_BASE_URL
+    value: "${API_INGRESS_URL}"
+- name: ollama
+  image: ollama/ollama:latest
+  has_repo: false
+  memory:
+    limits: 64Gi
+    requests: 4Gi
+  cpu:
+    limits: 128
+    requests: 2
+  command:
+  - ollama
+  args:
+  - serve
   ports:
   - type: node_port
-    target_port: '8503'
-    port: '8503'
+    target_port: '11434'
+    port: '11434'
     loadbalancer: false
-- name: pull-model
-  image: awesome-release/genai-stack/pull-model
+  node_selector:
+  - key: nvidia.com/gpu
+    value: 'true'
+  volumes:
+  - name: shmem
+    type: shmem
+    size: 16Gi
+    mount_path: "/dev/shm"
+  - claim: models
+    mount_path: "/root/.ollama"
+- name: gitbook-ingest
   build:
     context: "."
-    dockerfile: pull_model.Dockerfile
+    dockerfile: release_docs_gitbook_ingest.Dockerfile
   has_repo: true
+jobs:
+- name: gitbook-ingest
+  from_services: gitbook-ingest
+  command:
+  - python
+  - release-docs-gitbook-ingest.py
+  envs:
+  - key: CHROMA_HOST
+    value: chroma
+  - key: CHROMA_PORT
+    value: 8000
+  - key: OLLAMA_BASE_URL
+    value: http://ollama:11434
+  - key: LANGCHAIN_API_KEY
+    value: NONE
+  - key: LANGCHAIN_PROJECT
+    value: LANGCHAIN_PROJECT
+  - key: LANGCHAIN_ENDPOINT
+    value: https://api.smith.langchain.com
+  - key: LANGCHAIN_TRACING_V2
+    value: 'false'
+  memory:
+    limits: 4Gi
+    requests: 100Mi
+  cpu:
+    limits: 2000m
+    requests: 100m
+- name: pull-model
+  image: releaseai/genai-stack-pull-model
   command:
   - bb
   - "-f"
   - pull_model.clj
-jobs:
-- name: pull-model
-  from_services: pull-model
   envs:
+  - key: OLLAMA_BASE_URL
+    value: http://ollama:11434
   - key: LLM
     value: "${parameters.llm}"
-  - key: EMBEDDING_MODEL
-    value: "${parameters.embedding_model}"
 workflows:
 - name: setup
   parallelize:
-  - step: services-parallel
-    wait_for_finish: false
-    tasks:
-    - services.front-end
   - step: services-0
     tasks:
-    - services.database
+    - services.chroma
     - services.ollama
   - step: services-1
     tasks:
+    - services.api
     - jobs.pull-model
   - step: services-2
     tasks:
-    - services.api
-    - services.bot
-    - services.loader
-    - services.pdf-bot
+    - services.front-end
 - name: patch
   parallelize:
-  - step: services-parallel
-    wait_for_finish: false
-    tasks:
-    - services.front-end
-  - step: services-1
+  - step: services-0
     tasks:
     - services.api
-    - services.bot
-    - services.loader
-    - services.pdf-bot
+- name: gitbook-ingest
+  parallelize:
+  - step: gitbook-ingest
+    tasks:
+    - jobs.gitbook-ingest
 - name: teardown
   parallelize:
   - step: remove-environment
     tasks:
     - release.remove_environment
+
+
