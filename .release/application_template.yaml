@@ -1,7 +1,5 @@
 ---
 execution_type: server
-context: release-ai
-domain: ai-playground.releaseapp.io
 repo_name: awesome-release/genai-stack
 hostnames:
 - api: api-release-docs-rag-${env_id}.${domain}
@@ -30,11 +28,7 @@ parameters:
   optional: true
 services:
 - name: api
-  image: awesome-release/genai-stack/api
-  build:
-    context: "."
-    dockerfile: release_docs_api.Dockerfile
-  has_repo: true
+  image: awesome-release/genai-stack/release-api
   volumes: []
   command:
   - uvicorn
@@ -157,38 +151,7 @@ services:
     mount_path: "/dev/shm"
   - claim: models
     mount_path: "/root/.ollama"
-- name: gitbook-ingest
-  build:
-    context: "."
-    dockerfile: release_docs_gitbook_ingest.Dockerfile
-  has_repo: true
 jobs:
-- name: gitbook-ingest
-  from_services: gitbook-ingest
-  command:
-  - python
-  - release-docs-gitbook-ingest.py
-  envs:
-  - key: CHROMA_HOST
-    value: chroma
-  - key: CHROMA_PORT
-    value: 8000
-  - key: OLLAMA_BASE_URL
-    value: http://ollama:11434
-  - key: LANGCHAIN_API_KEY
-    value: NONE
-  - key: LANGCHAIN_PROJECT
-    value: LANGCHAIN_PROJECT
-  - key: LANGCHAIN_ENDPOINT
-    value: https://api.smith.langchain.com
-  - key: LANGCHAIN_TRACING_V2
-    value: 'false'
-  memory:
-    limits: 4Gi
-    requests: 100Mi
-  cpu:
-    limits: 2000m
-    requests: 100m
 - name: pull-model
   image: releaseai/genai-stack-pull-model
   command:
@@ -219,11 +182,6 @@ workflows:
   - step: services-0
     tasks:
     - services.api
-- name: gitbook-ingest
-  parallelize:
-  - step: gitbook-ingest
-    tasks:
-    - jobs.gitbook-ingest
 - name: teardown
   parallelize:
   - step: remove-environment
